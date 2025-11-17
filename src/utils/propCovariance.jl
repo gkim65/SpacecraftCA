@@ -39,14 +39,22 @@ function spaceXEpoch(epc_str="2025310104542.000")
 end
 
 
+# TODO: Test out different thrust_magnitudes
+function apply_thrust(eci, thrust_direction, thrust_magnitude = 10)
+    x = eci[1:3]
+    v = eci[4:6]
+    thrust = thrust_magnitude * v/norm(v) * thrust_direction # this is our u > control, it can be 1, -1, or 0
+    return vcat(x, v + thrust)
+end
 
 # Assuming x in ECI frame
 # T is in seconds
-# TODO: fix the u part
 function  step(x, u, epc0, T) #epc_str="2025320194042.000", T=60)
 
     epcf = epc0 + T
     x_state = 1000.0 .* Float64.(x)
+
+    x_state = apply_thrust(x_state, u[1])
     
     # Initialize State Vector
     orb  = EarthInertialState(epc0, x_state, dt=60.0,

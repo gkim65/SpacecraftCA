@@ -39,9 +39,10 @@ N = 2
 predictions = Vector{GaussianBelief}(undef, N)
 predictions[1] = b0
 
+u = [0] # this is our u > control, it can be 1, -1, or 0
 for k in 2:N
     # propagate belief without measurement (prediction step)
-    predictions[k] = predictEpc(ukf, predictions[k-1], [1], epc0, T) 
+    predictions[k] = predictEpc(ukf, predictions[k-1], u, epc0, T) 
 end
 
 
