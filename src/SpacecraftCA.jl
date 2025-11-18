@@ -69,61 +69,10 @@ end
 
 # Include utility functions (some depend on states.jl)
 include("utils/probabilityCollision.jl")
-include("utils/conjunctions.jl")
-include("utils/propagation.jl")
-
+include("utils/genConjunctions.jl")
 include("utils/propCovariance.jl")
 
-const _apply_thrust_propcov = apply_thrust
-function apply_thrust_prop(eci, thrust_direction, thrust_magnitude = 10)
-    x = eci[1:3]
-    v = eci[4:6]
-    thrust = thrust_magnitude * v/norm(v) * thrust_direction
-    return vcat(x, v + thrust)
-end
 
-function step(x, u, epc0, T)
-    epcf = epc0 + T
-    x_state = 1000.0 .* Float64.(x)
-    
-    if length(u) > 0 && u[1] != 0.0
-        thrust_dir = u[1] > 0 ? 1 : -1
-        thrust_mag = abs(u[1]) * 1e-3
-        x_state = apply_thrust_prop(x_state, thrust_dir, thrust_mag)
-    end
-    
-    orb = EarthInertialState(epc0, x_state, dt=60.0,
-               mass=1.0, n_grav=0, m_grav=0,
-               drag=true, srp=true,
-               moon=true, sun=true,
-               relativity=true
-    )
-    
-    t, epc, eci = sim!(orb, epcf)
-    return vec(eci[:, end]) ./ 1000.0
-end
-
-for m in methods(apply_thrust)
-    if m.module == SpacecraftCA && length(m.sig.parameters) == 4 && m.sig.parameters[3] != Symbol
-        Base.delete_method(m)
-    end
-end
-
-function apply_thrust(eci::Vector{Float64}, thrust_magnitude::Float64, thrust_direction::Symbol)
-    x = eci[1:3]
-    v = eci[4:6]
-    if thrust_direction == :along_track
-        tdir = 1
-    elseif thrust_direction == :anti_along_track
-        tdir = -1
-    else
-        error("Unknown thrust direction: $thrust_direction")
-    end
-    thrust = thrust_magnitude * v / norm(v) * tdir
-    return vcat(x, v + thrust)
-end
-
-include("utils/maneuvers.jl")
 
 """
 Spacecraft Collision Avoidance POMDP.

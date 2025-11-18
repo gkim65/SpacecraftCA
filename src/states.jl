@@ -1,3 +1,5 @@
+using Distributions
+
 mutable struct SpacecraftCAState
     TCA::Int                    # Time to Closest Approach (time steps until TCA)
     xs::Vector{Float64}         # Satellite state at TCA: [x, y, z, vx, vy, vz] (km, km/s)
@@ -23,7 +25,22 @@ if @isdefined(SpacecraftCAPOMDP)
 
     function POMDPs.initialstate(pomdp::SpacecraftCAPOMDP)
         seed = pomdp.seed
-        initial_state = generate_one_state(seed=seed !== nothing ? seed : false)
+        cdm = generate_one_CDM(seed=seed !== nothing ? seed : false)
+        
+        Σs_6x6 = zeros(6, 6)
+        Σd_6x6 = zeros(6, 6)
+        Σs_6x6[1:3, 1:3] = cdm.Σc
+        Σd_6x6[1:3, 1:3] = cdm.Σd
+        
+        initial_state = SpacecraftCAState(
+            cdm.TCA,
+            cdm.xc,
+            cdm.xd,
+            Σs_6x6,
+            Σd_6x6,
+            cdm.rc,
+            cdm.rd
+        )
         return Deterministic(initial_state)
     end
 

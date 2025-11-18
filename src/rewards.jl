@@ -2,6 +2,11 @@ using POMDPs
 
 const COLLISION_THRESHOLD = 1e-5  
 const CRASH_COST = -0.5
+const MANEUVER_COST = 0.01
+
+function evasive_maneuver_cost(state::SpacecraftCAState, unit_dv::Float64)
+    return MANEUVER_COST
+end
 
 function POMDPs.reward(pomdp::SpacecraftCAPOMDP, s::SpacecraftCAState, a::Symbol)
     current_Pc = fosterPcState(s)
@@ -20,7 +25,7 @@ function POMDPs.reward(pomdp::SpacecraftCAPOMDP, s::SpacecraftCAState, a::Symbol
         if a == :wait
             return 0.0
         else
-            cost, _ = evasive_maneuver(s, unit_dv=pomdp.unit_dv)
+            cost = evasive_maneuver_cost(s, pomdp.unit_dv)
             return -cost
         end
     end
