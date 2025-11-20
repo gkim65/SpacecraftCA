@@ -4,8 +4,6 @@ using SpacecraftCA
 using POMDPs
 using POMDPTools
 
-const fosterPcState = SpacecraftCA.fosterPcState
-
 println("=" ^ 60)
 println("Spacecraft Collision Avoidance POMDP Simulation")
 println("=" ^ 60)
@@ -35,7 +33,7 @@ let
     current_state = s0
     total_reward = 0.0
     step_count = 0
-    max_steps = min(s0.TCA, 5)
+    max_steps = min(s0.TCA, 10)
 
     for step in 1:max_steps
         println("\n--- Step $step ---")
@@ -44,8 +42,8 @@ let
         pc = fosterPcState(current_state)
         println("Current collision probability: ", pc)
         
-        if current_state.TCA <= 0
-            println("TCA reached! Episode complete.")
+        if isterminal(pomdp, current_state)
+            println("Terminal state reached! Episode complete.")
             break
         end
         
@@ -76,5 +74,3 @@ let
     println("Final collision probability: ", fosterPcState(current_state))
     println("Total discounted reward: ", total_reward)
 end
-
-

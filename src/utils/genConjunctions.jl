@@ -35,7 +35,7 @@ function random_debris(eci_spacecraft; rtn_cov_diag = [1e1, 1e4, 1e4], seed=fals
    
     # use the vector and the arbitrary covariance to generate a random debris position
 
-    rtn_offset_distribution = MvNormal([0, 0, 0], Diagonal(rtn_cov_diag))
+    rtn_offset_distribution = Distributions.MvNormal([0, 0, 0], Diagonal(rtn_cov_diag))
     rtn_offset = rand(rtn_offset_distribution)
     rvec = eci_spacecraft[1:3]/norm(eci_spacecraft[1:3]) # radial direction
     tvec = eci_spacecraft[4:6]/norm(eci_spacecraft[4:6]) # along-track direction
@@ -82,8 +82,8 @@ function generate_one_CDM(;seed = false, debris_cov_diag = [1e1, 1e4, 1e4], synt
     end
     spacecraft, debris = generate_conjunction(;seed=seed, debris_cov_diag=debris_cov_diag)
     Σc, Σd = sample_covariance(;seed=seed)
-    rc = rand(Uniform(rc_range...)) 
-    rd = rand(Uniform(rd_range...))
+    rc = rand(Distributions.Uniform(rc_range...)) 
+    rd = rand(Distributions.Uniform(rd_range...))
     return CDM(syntheticTCA, spacecraft, debris, Σc, Σd, rc, rd)
 end
 
@@ -93,8 +93,8 @@ function sample_covariance(;seed=false, Σc_μ = [10^1,10^3,10^1], Σd_μ = [10^
         Random.seed!(seed)
     end
     # Generate Covariance distributions based on the examples from spacetrack.org - which happen at TCA = 3 - 1 day in advance.
-    Σc_distribution = MvNormal(Σc_μ, Diagonal(Σc_σ))
-    Σd_distribution = MvNormal(Σd_μ, Diagonal(Σd_σ))
+    Σc_distribution = Distributions.MvNormal(Σc_μ, Diagonal(Σc_σ))
+    Σd_distribution = Distributions.MvNormal(Σd_μ, Diagonal(Σd_σ))
 
     # Generate Covariances
     Σc = Diagonal(rand(Σc_distribution))
