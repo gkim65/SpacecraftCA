@@ -29,8 +29,8 @@ if @isdefined(SpacecraftCAPOMDP)
         
         Σs_6x6 = zeros(6, 6)
         Σd_6x6 = zeros(6, 6)
-        Σs_6x6[1:3, 1:3] = cdm.Σc
-        Σd_6x6[1:3, 1:3] = cdm.Σd
+        Σs_6x6[1:6, 1:6] = cdm.Σc
+        Σd_6x6[1:6, 1:6] = cdm.Σd
         
         initial_state = SpacecraftCAState(
             cdm.TCA,
