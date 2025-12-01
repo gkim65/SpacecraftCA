@@ -14,13 +14,11 @@ s0_dist = initialstate(pomdp)
 s0 = rand(s0_dist)
 transition(pomdp, s0, :wait)
 
-# propagate them foward
-# Then check for probability of collision
 
-
-# Takes object1_Σ and object2_Σ as they are.
-# Assumes objects are already in the encounter geometry frame (RTN) and already propagated to the encounter time.
-fosterPcAnalytical(cdm_rand.xc, cdm_rand.Σc, cdm_rand.xd, cdm_rand.Σd, object1_radius = cdm_rand.rc, object2_radius = cdm_rand.rd)
+# need to propagate the objects forward to the correct tca 
+# then check how the probability of collision is there versus before
+# @vedant i think this example doesn't check the propagation then the state yet
+# but I would make this check
 
 println("TCA: ", s0.TCA, " time steps")
 println("Satellite position (km): ", s0.xs[1:3])
