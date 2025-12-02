@@ -1,4 +1,5 @@
 using HCubature
+using Distributions
 
 
 function integrate_circle(gaussian, radius)
@@ -67,4 +68,36 @@ function fosterPcAnalytical(object1_x, object1_Σ, object2_x, object2_Σ; object
     Pc = integrate_circle(gaussian, d_hb)
 
     return Pc
+end
+
+function fosterPcState(pomdp::SpacecraftCAPOMDP, state::SpacecraftCAState)
+    if state.TCA <= 0
+        xs_tca = state.xs
+        xd_tca = state.xd
+        Σs_tca = state.Σs
+        Σd_tca = state.Σd
+    else
+        T_total = state.TCA * pomdp.dt_seconds
+        
+        bp_s = unscented_kalman_filter(pomdp, state.xs, state.Σs, [0.0], T_total)
+        bp_d = unscented_kalman_filter(pomdp, state.xd, state.Σd, [0.0], T_total)
+        
+        xs_tca = bp_s.μ
+        xd_tca = bp_d.μ
+        Σs_tca = Matrix(bp_s.Σ)
+        Σd_tca = Matrix(bp_d.Σ)
+    end
+    
+    Σs_rtn = getRTNCovariance(xs_tca, Σs_tca)
+    Σd_rtn = getRTNCovariance(xd_tca, Σd_tca)
+    Σs_6x6 = zeros(6, 6)
+    Σd_6x6 = zeros(6, 6)
+    Σs_6x6[1:3, 1:3] = Σs_rtn
+    Σd_6x6[1:3, 1:3] = Σd_rtn
+    return fosterPcAnalytical(
+        xs_tca, Σs_6x6, 
+        xd_tca, Σd_6x6,
+        object1_radius=state.rs,
+        object2_radius=state.rd
+    )
 end

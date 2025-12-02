@@ -27,22 +27,6 @@ function getRTNCovariance(x, Σ_eci)
     return Σ_rtn[1:3, 1:3]
 end
 
-function fosterPcState(state::SpacecraftCAState)
-    Σs_rtn = getRTNCovariance(state.xs, state.Σs)
-    Σd_rtn = getRTNCovariance(state.xd, state.Σd)
-    Σs_6x6 = zeros(6, 6)
-    Σd_6x6 = zeros(6, 6)
-    Σs_6x6[1:3, 1:3] = Σs_rtn
-    Σd_6x6[1:3, 1:3] = Σd_rtn
-    return fosterPcAnalytical(
-        state.xs, Σs_6x6, 
-        state.xd, Σd_6x6,
-        object1_radius=state.rs,
-        object2_radius=state.rd
-    )
-end
-
-include("utils/probabilityCollision.jl")
 include("utils/genConjunctions.jl")
 include("utils/propCovariance.jl")
 
@@ -61,6 +45,9 @@ on noisy observations of the debris state.
 - `dt_seconds`: Time step in seconds (default: 28800 = 8 hours)
 - `current_epoch_str`: Current epoch string "YYYYJJJHHMMSS.fff" (default: "2024001000000.000")
 - `observation_noise`: Observation noise covariance matrix V (optional, default: 0.1*I)
+- `collision_threshold`: Collision probability threshold (default: 1e-5)
+- `crash_cost`: Cost for collision (default: -0.5)
+- `maneuver_cost`: Cost for executing maneuver (default: 0.01)
 - `seed`: Random seed for reproducibility (optional)
 """
 struct SpacecraftCAPOMDP <: POMDP{SpacecraftCAState, Symbol, Vector{Float64}}
@@ -71,6 +58,9 @@ struct SpacecraftCAPOMDP <: POMDP{SpacecraftCAState, Symbol, Vector{Float64}}
     dt_seconds::Float64
     current_epoch_str::String
     observation_noise::Matrix{Float64}
+    collision_threshold::Float64
+    crash_cost::Float64
+    maneuver_cost::Float64
     seed::Union{Int, Nothing}
 end
 
@@ -82,6 +72,9 @@ function SpacecraftCAPOMDP(;
     dt_seconds=28800.0,  # 8 hours
     current_epoch_str="2024001000000.000",
     observation_noise=0.1 * Matrix{Float64}(I, 6, 6),
+    collision_threshold=1e-5,
+    crash_cost=-0.5,
+    maneuver_cost=0.01,
     seed=nothing
 )
     return SpacecraftCAPOMDP(
@@ -92,6 +85,9 @@ function SpacecraftCAPOMDP(;
         dt_seconds,
         current_epoch_str,
         observation_noise,
+        collision_threshold,
+        crash_cost,
+        maneuver_cost,
         seed
     )
 end
@@ -104,5 +100,7 @@ include("actions.jl")
 include("observation.jl")
 include("transition.jl")
 include("rewards.jl")
+include("utils/probabilityCollision.jl")
+include("rollout.jl")
 
 end

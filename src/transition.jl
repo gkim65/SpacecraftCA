@@ -17,7 +17,7 @@ function ensure_positive_definite(Σ::Matrix{Float64}, eps=1e-10)
     return Σ_sym
 end
 
-function unscented_kalman_filter(pomdp::SpacecraftCAPOMDP, x::Vector{Float64}, C_eci::Matrix{Float64}, u::AbstractVector{<:Number})
+function unscented_kalman_filter(pomdp::SpacecraftCAPOMDP, x::Vector{Float64}, C_eci::Matrix{Float64}, u::AbstractVector{<:Number}, T_total::Float64=pomdp.dt_seconds)
     C_eci_pd = ensure_positive_definite(C_eci)
     b0 = GaussianBelief(Float64.(x), C_eci_pd)
 
@@ -28,20 +28,25 @@ function unscented_kalman_filter(pomdp::SpacecraftCAPOMDP, x::Vector{Float64}, C
 
     ukf = UnscentedKalmanFilter(dmodel, omodel)
     
-    N = 2
-    T = pomdp.dt_seconds / N
+    N = max(1, Int(ceil(T_total / pomdp.dt_seconds)))
+    T = pomdp.dt_seconds
     epc0 = spaceXEpoch(pomdp.current_epoch_str)
     
-    predictions = Vector{GaussianBelief}(undef, N)
-    predictions[1] = b0
-
+    current_belief = b0
     current_epc = epc0
-    for k in 2:N
-        predictions[k] = predictEpc(ukf, predictions[k-1], u, current_epc, T)
-        current_epc = current_epc + T
+    
+    for k in 1:N
+        if k == N && T_total < N * pomdp.dt_seconds
+            T_step = T_total - (N - 1) * pomdp.dt_seconds
+        else
+            T_step = T
+        end
+        
+        current_belief = predictEpc(ukf, current_belief, u, current_epc, T_step)
+        current_epc = current_epc + T_step
     end
     
-    return predictions[N]
+    return current_belief
 end
 
 function POMDPs.transition(pomdp::SpacecraftCAPOMDP, s::SpacecraftCAState, a::Symbol)

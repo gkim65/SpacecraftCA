@@ -187,7 +187,7 @@ function sim_backwards!(state::EarthInertialState, time::Epoch)
     end
 end
 
-function generate_one_CDM(;seed = false, epoch_str="2024001000000.000", debris_cov_diag = [1e1, 1e4, 1e4], syntheticTCA = 9, rc_range = (5.,10.), rd_range = (5.,10.))
+function generate_one_CDM(;seed = false, epoch_str="2024001000000.000", debris_cov_diag = [1e1, 1e4, 1e4], syntheticTCA = 9, dt_seconds = 28800.0, rc_range = (5.,10.), rd_range = (5.,10.))
     """
     Generate a conjunction, and propagate the states backwards from indicated tca epoch
     Generate a Return a random covariance matrix for both the spacecraft and debris object
@@ -198,7 +198,7 @@ function generate_one_CDM(;seed = false, epoch_str="2024001000000.000", debris_c
     end
 
     epcStart = spaceXEpoch(epoch_str)
-    epcTCA = epcStart + syntheticTCA*3600 # Change to seconds
+    epcTCA = epcStart + syntheticTCA * dt_seconds
 
     spacecraft, debris, orb_spacecraft, orb_debris= generate_conjunction(;seed=seed, debris_cov_diag=debris_cov_diag, epc = epcTCA)
     Σc, Σd = sample_covariance(;seed=seed)

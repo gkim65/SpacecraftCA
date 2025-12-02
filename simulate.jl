@@ -3,16 +3,22 @@ Pkg.activate(".")
 using SpacecraftCA
 using POMDPs
 using POMDPTools
+using Random
+
+seed = 2
+Random.seed!(seed)
+println("Using random seed: $seed")
 
 println("=" ^ 60)
 println("Spacecraft Collision Avoidance POMDP Simulation")
 println("=" ^ 60)
 
-pomdp = SpacecraftCAPOMDP()
+pomdp = SpacecraftCAPOMDP(seed=seed)
 println("\nPOMDP created with:")
 println("  Discount factor: ", discount(pomdp))
 println("  Time step: ", pomdp.dt_seconds / 3600, " hours")
 println("  Unit delta-V: ", pomdp.unit_dv, " km/s")
+println("  Collision threshold: ", pomdp.collision_threshold)
 
 println("\n" * "=" ^ 60)
 println("Initial State")
@@ -23,7 +29,7 @@ s0 = rand(s0_dist)
 println("TCA: ", s0.TCA, " time steps")
 println("Satellite position (km): ", s0.xs[1:3])
 println("Debris position (km): ", s0.xd[1:3])
-println("Collision probability: ", fosterPcState(s0))
+println("Collision probability at TCA: ", fosterPcState(pomdp, s0))
 
 println("\n" * "=" ^ 60)
 println("Simulation Run")
@@ -39,15 +45,15 @@ let
         println("\n--- Step $step ---")
         println("Current TCA: ", current_state.TCA)
         
-        pc = fosterPcState(current_state)
-        println("Current collision probability: ", pc)
+        pc = fosterPcState(pomdp, current_state)
+        println("Current collision probability at TCA: ", pc)
         
         if isterminal(pomdp, current_state)
             println("Terminal state reached! Episode complete.")
             break
         end
         
-        action = pc > 1e-4 ? :maneuver : :wait
+        action = pc > pomdp.collision_threshold * 10 ? :maneuver : :wait
         println("Selected action: ", action)
         
         sp_dist = transition(pomdp, current_state, action)
@@ -71,6 +77,6 @@ let
     println("=" ^ 60)
     println("Total steps: ", step_count)
     println("Final TCA: ", current_state.TCA)
-    println("Final collision probability: ", fosterPcState(current_state))
+    println("Final collision probability at TCA: ", fosterPcState(pomdp, current_state))
     println("Total discounted reward: ", total_reward)
 end

@@ -25,7 +25,7 @@ if @isdefined(SpacecraftCAPOMDP)
 
     function POMDPs.initialstate(pomdp::SpacecraftCAPOMDP)
         seed = pomdp.seed
-        cdm = generate_one_CDM(seed=seed !== nothing ? seed : false)
+        cdm = generate_one_CDM(seed=seed !== nothing ? seed : false, epoch_str=pomdp.current_epoch_str, dt_seconds=pomdp.dt_seconds)
         
         Σs_6x6 = zeros(6, 6)
         Σd_6x6 = zeros(6, 6)
