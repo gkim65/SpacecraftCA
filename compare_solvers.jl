@@ -88,7 +88,8 @@ function evaluate_policy(policy_name, policy_factory, pomdp_factory, seeds, max_
         
         pomdp = pomdp_factory(seed)
         policy = policy_factory(pomdp)
-        belief_updater = POMDPs.updater(policy)
+        # Use explicit BootstrapFilter with 100 particles for all policies for consistency
+        belief_updater = BootstrapFilter(pomdp, 100)
         
         result = run_one_simulation(pomdp, policy, belief_updater, seed, max_steps)
         push!(results, result)
@@ -119,7 +120,7 @@ println("Satellite Collision Avoidance - Algorithm Comparison")
 println("=" ^ 70)
 
 # Configuration
-num_runs = 10
+num_runs = 3  # Reduced for faster execution
 seeds = collect(1:num_runs)
 max_steps = 20
 
@@ -136,7 +137,7 @@ threshold_policy_factory = (pomdp) -> ThresholdPolicy(pomdp, 10.0)
 pomcpow_policy_factory = (tree_queries) -> (pomdp) -> begin
     solver = POMCPOWSolver(
         tree_queries=tree_queries,
-        max_depth=4,
+        max_depth=3,  # Reduced from 4 for faster execution
         criterion=MaxUCB(1.0),
         k_observation=10.0,
         alpha_observation=0.1,
@@ -175,16 +176,10 @@ pomcpow_q4_results = evaluate_policy(
     max_steps
 )
 
-pomcpow_q10_results = evaluate_policy(
-    "POMCPOW (tree_queries=10)",
-    pomcpow_policy_factory(10),
-    pomdp_factory,
-    seeds,
-    max_steps
-)
+# Removed tree_queries=10 variant for faster execution
 
 # Collect all results
-all_results = [threshold_results, pomcpow_q2_results, pomcpow_q4_results, pomcpow_q10_results]
+all_results = [threshold_results, pomcpow_q2_results, pomcpow_q4_results]
 
 # Print comparison table
 println("\n" * "=" ^ 70)
@@ -209,7 +204,7 @@ println(@sprintf("%-15s | %12s | %12s | %12s",
     "Tree Queries", "Reward μ", "Reward σ", "Runtime μ (s)"))
 println("-" ^ 70)
 
-pomcpow_variants = [pomcpow_q2_results, pomcpow_q4_results, pomcpow_q10_results]
+pomcpow_variants = [pomcpow_q2_results, pomcpow_q4_results]
 for r in pomcpow_variants
     queries = match(r"tree_queries=(\d+)", r.name).captures[1]
     println(@sprintf("%-15s | %12.2f | %12.2f | %12.3f",
