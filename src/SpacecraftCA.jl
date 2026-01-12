@@ -8,7 +8,7 @@ using LinearAlgebra
 using Distributions
 using Random
 using StaticArrays
-using SatelliteDynamics
+using PyCall
 using HCubature
 using Dates, Printf
 using GaussianFilters
@@ -16,6 +16,30 @@ using GaussianFilters
 export SpacecraftCAPOMDP, SpacecraftCAState, fosterPcState
 
 include("states.jl")
+
+function rRTNtoECI(x)
+    """
+    Compute rotation matrix from RTN (Radial-Tangential-Normal) to ECI frame
+    x: state vector [x, y, z, vx, vy, vz] in ECI frame
+    Returns: 3x3 rotation matrix R such that v_ECI = R * v_RTN
+    """
+    r = x[1:3]  # position vector
+    v = x[4:6]  # velocity vector
+    
+    # Radial direction (normalized position vector)
+    R_hat = r / norm(r)
+    
+    # Normal direction (normalized angular momentum)
+    h = cross(r, v)
+    N_hat = h / norm(h)
+    
+    # Tangential direction (completes right-handed system)
+    T_hat = cross(N_hat, R_hat)
+    
+    # Build rotation matrix: columns are RTN basis vectors in ECI frame
+    return hcat(R_hat, T_hat, N_hat)
+end
+
 function covECItoRTN(x, covariance)
     R = rRTNtoECI(x)
     R_inv = R'
