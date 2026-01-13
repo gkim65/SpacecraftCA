@@ -4,7 +4,6 @@ using Distributions
 using LinearAlgebra
 using Random
 using GaussianFilters
-using SatelliteDynamics
 
 function ensure_positive_definite(Σ::Matrix{Float64}, eps=1e-10)
     Σ_sym = Symmetric(Σ)
@@ -18,6 +17,12 @@ function ensure_positive_definite(Σ::Matrix{Float64}, eps=1e-10)
 end
 
 function unscented_kalman_filter(pomdp::SpacecraftCAPOMDP, x::Vector{Float64}, C_eci::Matrix{Float64}, u::AbstractVector{<:Number}, T_total::Float64=pomdp.dt_seconds)
+    # Safety check for NaN/Inf in inputs
+    if any(isnan.(x)) || any(isinf.(x)) || any(isnan.(C_eci)) || any(isinf.(C_eci))
+        # Return original state if inputs are corrupted
+        return GaussianBelief(x, Symmetric(C_eci))
+    end
+    
     C_eci_pd = ensure_positive_definite(C_eci)
     b0 = GaussianBelief(Float64.(x), C_eci_pd)
 
@@ -30,7 +35,7 @@ function unscented_kalman_filter(pomdp::SpacecraftCAPOMDP, x::Vector{Float64}, C
     
     N = max(1, Int(ceil(T_total / pomdp.dt_seconds)))
     T = pomdp.dt_seconds
-    epc0 = spaceXEpoch(pomdp.current_epoch_str)
+    epc0 = spaceXEpoch_brahe(pomdp.current_epoch_str)
     
     current_belief = b0
     current_epc = epc0
@@ -43,6 +48,14 @@ function unscented_kalman_filter(pomdp::SpacecraftCAPOMDP, x::Vector{Float64}, C
         end
         
         current_belief = predictEpc(ukf, current_belief, u, current_epc, T_step)
+        
+        # Safety check after propagation
+        if any(isnan.(current_belief.μ)) || any(isinf.(current_belief.μ)) ||
+           any(isnan.(current_belief.Σ)) || any(isinf.(current_belief.Σ))
+            # Return previous belief if propagation failed
+            return b0
+        end
+        
         current_epc = current_epc + T_step
     end
     

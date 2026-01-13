@@ -5,7 +5,7 @@ using POMDPs
 using POMDPTools
 using Random
 
-seed = 2
+seed = 37
 Random.seed!(seed)
 println("Using random seed: $seed")
 

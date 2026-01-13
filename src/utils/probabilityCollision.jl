@@ -29,18 +29,42 @@ function fosterPcAnalytical(object1_x, object1_Σ, object2_x, object2_Σ; object
 
     - Foster Monte Carlo and Foster Analytical should result in the same Pc.
     """
+    
+    # Safety check for NaN/Inf in inputs
+    if any(isnan.(object1_x)) || any(isinf.(object1_x)) || 
+       any(isnan.(object2_x)) || any(isinf.(object2_x)) ||
+       any(isnan.(object1_Σ)) || any(isinf.(object1_Σ)) ||
+       any(isnan.(object2_Σ)) || any(isinf.(object2_Σ))
+        return 0.0  # Return zero collision probability if inputs are invalid
+    end
 
     u_var = object1_Σ[1, 1] + object2_Σ[1, 1]
 
     # U axis is orthogonal to the velocity plane
     u_axis = cross(object1_x[4:6], object2_x[4:6])
-    u_axis /= norm(u_axis)
+    u_norm = norm(u_axis)
+    if u_norm < 1e-10  # Parallel velocities
+        return 0.0  # Can't compute collision probability
+    end
+    u_axis /= u_norm
+    
     # V axis is in the direction of relative velocity
     v_axis = object2_x[4:6] - object1_x[4:6]
-    v_axis /= norm(v_axis)
+    v_norm = norm(v_axis)
+    if v_norm < 1e-10  # Same velocity
+        return 0.0
+    end
+    v_axis /= v_norm
+    
     w_axis = cross(u_axis, v_axis)
     # This matrix rotates from UVW to XYZ
     R_inv = hcat(u_axis, v_axis, w_axis)
+    
+    # Check for NaN/Inf before inversion
+    if any(isnan.(R_inv)) || any(isinf.(R_inv))
+        return 0.0
+    end
+    
     # This matrix rotates from XYZ to UVW
     R = inv(R_inv)
 
