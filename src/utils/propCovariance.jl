@@ -34,7 +34,76 @@ function mc_propagate_mean_cov(mean_x, cov_mat, u, epc0, T, n_samples=200)
 end
 
 
-####### UKF based covariance propagation
+####### STM-based covariance propagation using brahe
+
+"""
+Propagate covariance forward using Python brahe's STM capabilities
+
+Parameters:
+- x: Initial state vector [pos; vel] in km and km/s (ECI frame)
+- Σ0: Initial covariance matrix (6x6) in km² and (km/s)²
+- epc_brahe: Initial brahe epoch object
+- T: Propagation time in seconds
+- u: Control input [thrust_direction] (1, -1, or 0)
+- thrust_magnitude: Thrust magnitude in m/s (default 10.0)
+
+Returns:
+- x_final: Final state vector in km and km/s
+- Σ_final: Propagated covariance matrix
+"""
+function propagate_state_cov_stm(x::Vector{Float64}, Σ0::Matrix{Float64}, 
+                                   epc_brahe, T::Float64, u::Vector{Float64}=[0.0];
+                                   thrust_magnitude::Float64=10.0, dt::Float64=10.0)
+    bh_prop = get_brahe_prop()
+    np = pyimport("numpy")
+    
+    # Convert state to meters (brahe uses meters)
+    x_meters = x .* 1000.0
+    
+    # Apply thrust if needed
+    if length(u) > 0 && u[1] != 0.0
+        v_norm = norm(x[4:6])
+        if v_norm > 0
+            thrust_vec = thrust_magnitude * (x[4:6] / v_norm) * u[1]  # m/s
+            x_meters[4:6] .+= thrust_vec
+        end
+    end
+    
+    # Create propagator with STM enabled
+    prop_config = bh_prop.NumericalPropagationConfig.default().with_stm().with_stm_history()
+    force_config = bh_prop.ForceModelConfig.two_body()  # Simple dynamics
+    params = np.array([1.0, 2.0, 2.2, 2.0, 1.3])  # [mass, drag_area, Cd, srp_area, Cr]
+    
+    prop = bh_prop.NumericalOrbitPropagator(
+        epc_brahe,
+        np.array(x_meters),
+        prop_config,
+        force_config,
+        params=params
+    )
+    
+    # Calculate target epoch
+    target_epoch = epc_brahe + T
+    
+    # Propagate to target epoch
+    prop.propagate_to(target_epoch)
+    
+    # Get final state and STM at target epoch
+    x_final_meters = collect(prop.state(target_epoch))
+    x_final = x_final_meters ./ 1000.0  # Convert back to km
+    
+    # Get STM from propagator (returns STM at current propagated time)
+    stm = prop.stm()  # This is Φ(t_final, t_0)
+    Φ = collect(stm)
+    
+    # Propagate covariance: Σ(t) = Φ * Σ0 * Φᵀ
+    Σ_final = Φ * Σ0 * transpose(Φ)
+    
+    return x_final, Σ_final
+end
+
+
+####### UKF based covariance propagation (legacy - slower)
 
 function spaceXEpoch_brahe(epc_str="2025310104542.000")
     """

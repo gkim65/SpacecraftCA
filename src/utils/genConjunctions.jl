@@ -162,9 +162,10 @@ end
 
 
 # TODO: Revisit these sample covariance value ranges, not sure if right range
-function sample_covariance(;seed=false, Σc_μ = [10^1,10^3,10^1, 4e-6, 4e-4, 4e-6], Σd_μ = [10^2,10^6,10^2, 1e-4, 1e-2, 1e-4], Σc_σ = [2,20,2,0.0005, 0.005, 0.0005], Σd_σ = [20,200,20,0.002, 0.020, 0.002])
+function sample_covariance(;seed=false, Σc_μ = [10^2,10^4,10^2, 4e-5, 4e-3, 4e-5], Σd_μ = [10^3,10^7,10^3, 1e-3, 1e-1, 1e-3], Σc_σ = [20,200,20,0.005, 0.05, 0.005], Σd_σ = [200,2000,200,0.02, 0.20, 0.02])
     """
     Return a random covariance matrix for both the spacecraft and debris object
+    Uses absolute values to ensure positive diagonal elements
     """
     
     if seed != false
@@ -175,9 +176,11 @@ function sample_covariance(;seed=false, Σc_μ = [10^1,10^3,10^1, 4e-6, 4e-4, 4e
     Σd_distribution = Distributions.MvNormal(Σd_μ, Diagonal(Σd_σ))
 
     
-    # Generate Covariances
-    Σc = Diagonal(rand(Σc_distribution))
-    Σd = Diagonal(rand(Σd_distribution))
+    # Generate Covariances and ensure positive values
+    Σc_vals = abs.(rand(Σc_distribution))  
+    Σd_vals = abs.(rand(Σd_distribution))  
+    Σc = Diagonal(Σc_vals)
+    Σd = Diagonal(Σd_vals)
     return Σc, Σd
 end
 
@@ -243,7 +246,7 @@ function sim_backwards_brahe(prop, epoch_start, epoch_target)
         return t_arr, epc_arr, x_arr
 end
 
-function generate_one_CDM(;seed = false, epoch_str="2024001000000.000", debris_cov_diag = [1e1, 1e4, 1e4], syntheticTCA = 9, dt_seconds = 28800.0, rc_range = (5.,10.), rd_range = (5.,10.))
+function generate_one_CDM(;seed = false, epoch_str="2024001000000.000", debris_cov_diag = [0.1, 20.0, 20.0], syntheticTCA = 9, dt_seconds = 28800.0, rc_range = (5.,10.), rd_range = (5.,10.))
     """
     Generate a conjunction, and propagate the states backwards from indicated tca epoch
     Generate a Return a random covariance matrix for both the spacecraft and debris object
@@ -274,24 +277,9 @@ function generate_one_CDM(;seed = false, epoch_str="2024001000000.000", debris_c
     x_arr_c = spacecraft
     x_arr_d = debris
 
-    # TODO: Just shrink covariances for now (we should fix this later)
-    # Also note for vedant: this may be reducing the positional and velocity uncertainty a bit too much, so if things don't 
-    # collide after propagating this forward we might need to lower these values
-    scale_pos = 0.1   # 10x reduction in positional uncertainty
-    scale_vel = 0.2    # 5x reduction in velocity uncertainty
-
-    diag_c_new = diag(Σc)
-    Σc_new = Diagonal([
-        diag_c_new[1]*scale_pos, diag_c_new[2]*scale_pos, diag_c_new[3]*scale_pos,
-        diag_c_new[4]*scale_vel, diag_c_new[5]*scale_vel, diag_c_new[6]*scale_vel
-    ])
-    diag_d_new = diag(Σd)
-    Σd_new = Diagonal([
-        diag_d_new[1]*scale_pos, diag_d_new[2]*scale_pos, diag_d_new[3]*scale_pos,
-        diag_d_new[4]*scale_vel, diag_d_new[5]*scale_vel, diag_d_new[6]*scale_vel
-    ])
-
-    return CDM(syntheticTCA, x_arr_c, x_arr_d, Σc_new, Σd_new, rc, rd)
+    # Use covariances as-is (no scaling for better collision detection)
+    # Previous scaling was reducing uncertainties too much, making Pc too low
+    return CDM(syntheticTCA, x_arr_c, x_arr_d, Matrix(Σc), Matrix(Σd), rc, rd)
 end
 
 function parse_spacex_epoch(epc_str="2025310104542.000")

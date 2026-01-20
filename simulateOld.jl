@@ -5,7 +5,7 @@ using POMDPs
 using POMDPTools
 using Random
 
-seed = 37
+seed = 2
 Random.seed!(seed)
 println("Using random seed: $seed")
 
@@ -19,7 +19,6 @@ println("  Discount factor: ", discount(pomdp))
 println("  Time step: ", pomdp.dt_seconds / 3600, " hours")
 println("  Unit delta-V: ", pomdp.unit_dv, " km/s")
 println("  Collision threshold: ", pomdp.collision_threshold)
-println("  Propagation method: STM-based")
 
 println("\n" * "=" ^ 60)
 println("Initial State")
