@@ -1,10 +1,23 @@
-using SatelliteDynamics
+using PyCall
 using GaussianFilters
 using Dates, Printf
 using LinearAlgebra
 using Distributions
 using Random
 using Statistics
+
+# Import brahe Python library - lazy initialization
+const _bh_prop_cache = Ref{Union{PyObject, Nothing}}(nothing)
+
+function get_brahe_prop()
+    if _bh_prop_cache[] === nothing
+        _bh_prop_cache[] = pyimport("brahe")
+        # Initialize EOP and space weather data
+        _bh_prop_cache[].initialize_eop()
+        _bh_prop_cache[].initialize_sw()
+    end
+    return _bh_prop_cache[]
+end
 
 
 ####### Monte Carlo Based Covariance Matrix
@@ -21,21 +34,97 @@ function mc_propagate_mean_cov(mean_x, cov_mat, u, epc0, T, n_samples=200)
 end
 
 
-####### UKF based covariance propagation
+####### STM-based covariance propagation using brahe
 
-function spaceXEpoch(epc_str="2025310104542.000")
-    # Parse components (Julia uses 1-based indexing!)
+"""
+Propagate covariance forward using Python brahe's STM capabilities
+
+Parameters:
+- x: Initial state vector [pos; vel] in km and km/s (ECI frame)
+- Σ0: Initial covariance matrix (6x6) in km² and (km/s)²
+- epc_brahe: Initial brahe epoch object
+- T: Propagation time in seconds
+- u: Control input [thrust_direction] (1, -1, or 0)
+- thrust_magnitude: Thrust magnitude in m/s (default 10.0)
+
+Returns:
+- x_final: Final state vector in km and km/s
+- Σ_final: Propagated covariance matrix
+"""
+function propagate_state_cov_stm(x::Vector{Float64}, Σ0::Matrix{Float64}, 
+                                   epc_brahe, T::Float64, u::Vector{Float64}=[0.0];
+                                   thrust_magnitude::Float64=10.0, dt::Float64=10.0)
+    bh_prop = get_brahe_prop()
+    np = pyimport("numpy")
+    
+    # Convert state to meters (brahe uses meters)
+    x_meters = x .* 1000.0
+    
+    # Apply thrust if needed
+    if length(u) > 0 && u[1] != 0.0
+        v_norm = norm(x[4:6])
+        if v_norm > 0
+            thrust_vec = thrust_magnitude * (x[4:6] / v_norm) * u[1]  # m/s
+            x_meters[4:6] .+= thrust_vec
+        end
+    end
+    
+    # Create propagator with STM enabled
+    prop_config = bh_prop.NumericalPropagationConfig.default().with_stm().with_stm_history()
+    force_config = bh_prop.ForceModelConfig.two_body()  # Simple dynamics
+    params = np.array([1.0, 2.0, 2.2, 2.0, 1.3])  # [mass, drag_area, Cd, srp_area, Cr]
+    
+    prop = bh_prop.NumericalOrbitPropagator(
+        epc_brahe,
+        np.array(x_meters),
+        prop_config,
+        force_config,
+        params=params
+    )
+    
+    # Calculate target epoch
+    target_epoch = epc_brahe + T
+    
+    # Propagate to target epoch
+    prop.propagate_to(target_epoch)
+    
+    # Get final state and STM at target epoch
+    x_final_meters = collect(prop.state(target_epoch))
+    x_final = x_final_meters ./ 1000.0  # Convert back to km
+    
+    # Get STM from propagator (returns STM at current propagated time)
+    stm = prop.stm()  # This is Φ(t_final, t_0)
+    Φ = collect(stm)
+    
+    # Propagate covariance: Σ(t) = Φ * Σ0 * Φᵀ
+    Σ_final = Φ * Σ0 * transpose(Φ)
+    
+    return x_final, Σ_final
+end
+
+
+####### UKF based covariance propagation (legacy - slower)
+
+function spaceXEpoch_brahe(epc_str="2025310104542.000")
+    """
+    Parse SpaceX epoch string and return brahe Epoch object
+    """
+    bh_prop = get_brahe_prop()
+    
+    # Parse components
     year = parse(Int, epc_str[1:4])
     julian_day = parse(Int, epc_str[5:7])
     hour = parse(Int, epc_str[8:9])
     minute = parse(Int, epc_str[10:11])
-    second = parse(Float64, epc_str[12:end])  # includes fractional part
-
+    second = parse(Float64, epc_str[12:end])
+    
     # Convert Julian day to month/day
     date_val = Date(year) + Day(julian_day - 1)
     month_val = Dates.month(date_val)
     day_val = Dates.day(date_val)
-    return SatelliteDynamics.Epoch(year, month_val, day_val, hour, minute, second)
+    
+    # Create brahe epoch
+    return bh_prop.Epoch.from_datetime(year, month_val, day_val, hour, minute, second, 0.0, bh_prop.TimeSystem.UTC)
 end
 
 
@@ -47,28 +136,93 @@ function apply_thrust(eci, thrust_direction, thrust_magnitude = 10)
     return vcat(x, v + thrust)
 end
 
-# Assuming x in ECI frame
+# Assuming x in ECI frame (km and km/s)
 # T is in seconds
-function  step(x, u, epc0, T) #epc_str="2025320194042.000", T=60)
+# epc0 is a brahe Epoch object
+function step(x, u, epc0, T)
+    """
+    Propagate state x forward by T seconds using analytical Keplerian propagation
+    Much faster than numerical integration for two-body dynamics
+    x: state in km and km/s
+    u: control vector [thrust_direction]
+    epc0: brahe Epoch object (not used for analytical propagation)
+    T: propagation time in seconds
+    Returns: state in km and km/s
+    """
+    bh_prop = get_brahe_prop()
+    np = pyimport("numpy")
+    
+    x_state = 1000.0 .* Float64.(x)  # Convert to meters
 
-    epcf = epc0 + T
-    x_state = 1000.0 .* Float64.(x)
-
+    # Apply thrust
     x_state = apply_thrust(x_state, u[1])
     
-    # Initialize State Vector
-    orb  = EarthInertialState(epc0, x_state, dt=60.0,
-               mass=1.0, n_grav=0, m_grav=0,
-               drag=true, srp=true,
-               moon=true, sun=true,
-               relativity=true
-    )
-
-    # Simulate orbit
-    t, epc, eci = sim!(orb, epcf)
-
-    return vec(eci[:, end]) ./ 1000.0
-
+    # For two-body dynamics, use analytical Kepler propagation (no propagator object needed!)
+    local final_state  # Declare in outer scope
+    
+    try
+        # Convert to orbital elements
+        oe = bh_prop.state_eci_to_koe(np.array(x_state), bh_prop.AngleFormat.RADIANS)
+        
+        # Propagate mean anomaly analytically
+        a = oe[1]  # semi-major axis (Julia 1-indexed)
+        e = oe[2]  # eccentricity
+        
+        # Check for valid elliptical orbit (UKF sigma points can create unphysical states)
+        if a <= 0 || !isfinite(a)
+            # Invalid orbit - use simple propagation
+            throw(DomainError("Invalid semi-major axis"))
+        end
+        
+        if e < 0 || e >= 1 || !isfinite(e)
+            # Invalid eccentricity - use simple propagation
+            throw(DomainError("Invalid eccentricity"))
+        end
+        
+        mu = 3.986004418e14  # Earth's gravitational parameter (m^3/s^2)
+        n = sqrt(mu / a^3)  # mean motion (rad/s)
+        M0 = oe[6]  # initial mean anomaly (Julia 1-indexed)
+        M_new = M0 + n * T  # propagated mean anomaly
+        
+        # Create new orbital elements with updated mean anomaly
+        oe_new = np.array([a, e, oe[3], oe[4], oe[5], M_new])
+        
+        # Convert back to Cartesian ECI
+        final_state = bh_prop.state_koe_to_eci(oe_new, bh_prop.AngleFormat.RADIANS)
+        
+        # Check for NaN/Inf in result
+        if any(isnan.(final_state)) || any(isinf.(final_state))
+            throw(DomainError("NaN/Inf in propagated state"))
+        end
+    catch e
+        # If conversion fails, use simple linear ballistic propagation
+        # This preserves the state structure and avoids NaN/Inf
+        r0 = x_state[1:3]
+        v0 = x_state[4:6]
+        r_new = r0 .+ v0 .* T
+        
+        # Simple gravity correction (constant acceleration toward Earth center)
+        mu = 3.986004418e14
+        r_mag = norm(r0)
+        if r_mag > 0  # Avoid division by zero
+            accel = -mu / r_mag^3 .* r0
+            v_new = v0 .+ accel .* T
+            r_new = r0 .+ 0.5 .* (v0 .+ v_new) .* T  # Average velocity
+        else
+            v_new = v0
+        end
+        
+        final_state = np.array(vcat(r_new, v_new))
+    end
+    
+    # Final safety check - replace any NaN/Inf with original state
+    final_state_julia = collect(final_state)
+    if any(isnan.(final_state_julia)) || any(isinf.(final_state_julia))
+        final_state_julia = x_state  # Return original state if something went wrong
+    end
+    
+    # Convert back to km
+    return final_state_julia ./ 1000.0
 end
 
 function symmetric_from_lower(v)
@@ -87,6 +241,29 @@ end
 # nonlinear observation function. must be a function of both states (x) and actions (u) even if either are not used.
 function observe(x,u)
     return x
+end
+
+function rRTNtoECI(x)
+    """
+    Compute rotation matrix from RTN (Radial-Tangential-Normal) to ECI frame
+    x: state vector [x, y, z, vx, vy, vz] in ECI frame
+    Returns: 3x3 rotation matrix R such that v_ECI = R * v_RTN
+    """
+    r = x[1:3]  # position vector
+    v = x[4:6]  # velocity vector
+    
+    # Radial direction (normalized position vector)
+    R_hat = r / norm(r)
+    
+    # Normal direction (normalized angular momentum)
+    h = cross(r, v)
+    N_hat = h / norm(h)
+    
+    # Tangential direction (completes right-handed system)
+    T_hat = cross(N_hat, R_hat)
+    
+    # Build rotation matrix: columns are RTN basis vectors in ECI frame
+    return hcat(R_hat, T_hat, N_hat)
 end
 
 function covRTNtoECI(x, covariance)

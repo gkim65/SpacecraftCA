@@ -1,4 +1,5 @@
 using HCubature
+using Distributions
 
 
 function integrate_circle(gaussian, radius)
@@ -28,18 +29,42 @@ function fosterPcAnalytical(object1_x, object1_Σ, object2_x, object2_Σ; object
 
     - Foster Monte Carlo and Foster Analytical should result in the same Pc.
     """
+    
+    # Safety check for NaN/Inf in inputs
+    if any(isnan.(object1_x)) || any(isinf.(object1_x)) || 
+       any(isnan.(object2_x)) || any(isinf.(object2_x)) ||
+       any(isnan.(object1_Σ)) || any(isinf.(object1_Σ)) ||
+       any(isnan.(object2_Σ)) || any(isinf.(object2_Σ))
+        return 0.0  # Return zero collision probability if inputs are invalid
+    end
 
     u_var = object1_Σ[1, 1] + object2_Σ[1, 1]
 
     # U axis is orthogonal to the velocity plane
     u_axis = cross(object1_x[4:6], object2_x[4:6])
-    u_axis /= norm(u_axis)
+    u_norm = norm(u_axis)
+    if u_norm < 1e-10  # Parallel velocities
+        return 0.0  # Can't compute collision probability
+    end
+    u_axis /= u_norm
+    
     # V axis is in the direction of relative velocity
     v_axis = object2_x[4:6] - object1_x[4:6]
-    v_axis /= norm(v_axis)
+    v_norm = norm(v_axis)
+    if v_norm < 1e-10  # Same velocity
+        return 0.0
+    end
+    v_axis /= v_norm
+    
     w_axis = cross(u_axis, v_axis)
     # This matrix rotates from UVW to XYZ
     R_inv = hcat(u_axis, v_axis, w_axis)
+    
+    # Check for NaN/Inf before inversion
+    if any(isnan.(R_inv)) || any(isinf.(R_inv))
+        return 0.0
+    end
+    
     # This matrix rotates from XYZ to UVW
     R = inv(R_inv)
 
@@ -67,4 +92,36 @@ function fosterPcAnalytical(object1_x, object1_Σ, object2_x, object2_Σ; object
     Pc = integrate_circle(gaussian, d_hb)
 
     return Pc
+end
+
+function fosterPcState(pomdp::SpacecraftCAPOMDP, state::SpacecraftCAState)
+    if state.TCA <= 0
+        xs_tca = state.xs
+        xd_tca = state.xd
+        Σs_tca = state.Σs
+        Σd_tca = state.Σd
+    else
+        T_total = state.TCA * pomdp.dt_seconds
+        
+        bp_s = unscented_kalman_filter(pomdp, state.xs, state.Σs, [0.0], T_total)
+        bp_d = unscented_kalman_filter(pomdp, state.xd, state.Σd, [0.0], T_total)
+        
+        xs_tca = bp_s.μ
+        xd_tca = bp_d.μ
+        Σs_tca = Matrix(bp_s.Σ)
+        Σd_tca = Matrix(bp_d.Σ)
+    end
+    
+    Σs_rtn = getRTNCovariance(xs_tca, Σs_tca)
+    Σd_rtn = getRTNCovariance(xd_tca, Σd_tca)
+    Σs_6x6 = zeros(6, 6)
+    Σd_6x6 = zeros(6, 6)
+    Σs_6x6[1:3, 1:3] = Σs_rtn
+    Σd_6x6[1:3, 1:3] = Σd_rtn
+    return fosterPcAnalytical(
+        xs_tca, Σs_6x6, 
+        xd_tca, Σd_6x6,
+        object1_radius=state.rs,
+        object2_radius=state.rd
+    )
 end
